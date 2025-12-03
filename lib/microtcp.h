@@ -24,6 +24,7 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <stdint.h>
+#include <netinet/in.h>
 
 /*
  * Several useful constants
@@ -82,6 +83,9 @@ typedef struct
   uint64_t bytes_send;
   uint64_t bytes_received;
   uint64_t bytes_lost;
+
+  struct sockaddr_in peer_addr; /**< Remote peer address information */
+  socklen_t peer_addr_len;      /**< Length of the remote peer address */
 } microtcp_sock_t;
 
 
