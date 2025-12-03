@@ -37,6 +37,29 @@
 
 #define CHUNK_SIZE 4096
 
+static void
+print_banner (const char *progname)
+{
+  /* Present a clean banner for the benchmarking utility. */
+  printf ("==============================================\n");
+  printf ("  microTCP Benchmark Tool - %s\n", progname);
+  printf ("==============================================\n");
+}
+
+static void
+print_usage (const char *progname)
+{
+  /* Display usage instructions in English for clarity. */
+  printf ("Usage: %s [-s] [-m] -p <port> -f <file> [-a <ip>]\n", progname);
+  printf ("Options:\n");
+  printf ("   -s                  Run in server mode.\n");
+  printf ("   -m                  Use microTCP instead of TCP.\n");
+  printf ("   -f <string>         File name to save (server) or send (client).\n");
+  printf ("   -p <int>            Port to listen on or connect to.\n");
+  printf ("   -a <string>         Server IP address (client mode only).\n");
+  printf ("   -h                  Print this help message.\n");
+}
+
 static inline void
 print_statistics (ssize_t received, struct timespec start, struct timespec end)
 {
@@ -159,7 +182,72 @@ server_tcp (uint16_t listen_port, const char *file)
 int
 server_microtcp (uint16_t listen_port, const char *file)
 {
-  /*TODO: Write your code here */
+  uint8_t *buffer;
+  FILE *fp;
+  microtcp_sock_t sock;
+  struct sockaddr_in sin;
+  ssize_t received;
+
+  buffer = (uint8_t *) malloc (CHUNK_SIZE);
+  if (!buffer) {
+    perror ("Allocate application receive buffer");
+    return -EXIT_FAILURE;
+  }
+
+  fp = fopen (file, "w");
+  if (!fp) {
+    perror ("Open file for writing");
+    free (buffer);
+    return -EXIT_FAILURE;
+  }
+
+  sock = microtcp_socket (AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+  if (sock.sd < 0) {
+    perror ("Opening microTCP socket");
+    free (buffer);
+    fclose (fp);
+    return -EXIT_FAILURE;
+  }
+
+  memset (&sin, 0, sizeof(struct sockaddr_in));
+  sin.sin_family = AF_INET;
+  sin.sin_port = htons (listen_port);
+  sin.sin_addr.s_addr = INADDR_ANY;
+
+  if (microtcp_bind (&sock, (struct sockaddr *) &sin,
+                     sizeof(struct sockaddr_in)) < 0) {
+    perror ("microTCP bind");
+    free (buffer);
+    fclose (fp);
+    close (sock.sd);
+    return -EXIT_FAILURE;
+  }
+
+  if (microtcp_accept (&sock, (struct sockaddr *) &sin,
+                       sizeof(struct sockaddr_in)) < 0) {
+    perror ("microTCP accept");
+    free (buffer);
+    fclose (fp);
+    if (sock.sd >= 0) {
+      close (sock.sd);
+    }
+    return -EXIT_FAILURE;
+  }
+
+  while ((received = microtcp_recv (&sock, buffer, CHUNK_SIZE, 0)) > 0) {
+    if (fwrite (buffer, sizeof(uint8_t), received, fp)
+        != (size_t) received) {
+      printf ("Failed to write received data to file.\n");
+      break;
+    }
+  }
+
+  if (sock.sd >= 0) {
+    microtcp_shutdown (&sock, SHUT_RDWR);
+  }
+
+  free (buffer);
+  fclose (fp);
   return 0;
 }
 
@@ -248,7 +336,67 @@ client_tcp (const char *serverip, uint16_t server_port, const char *file)
 int
 client_microtcp (const char *serverip, uint16_t server_port, const char *file)
 {
-  /*TODO: Write your code here */
+  uint8_t *buffer;
+  microtcp_sock_t sock;
+  struct sockaddr_in sin;
+  FILE *fp;
+  size_t read_items = 0;
+  ssize_t data_sent;
+
+  buffer = (uint8_t *) malloc (CHUNK_SIZE);
+  if (!buffer) {
+    perror ("Allocate application receive buffer");
+    return -EXIT_FAILURE;
+  }
+
+  fp = fopen (file, "r");
+  if (!fp) {
+    perror ("Open file for reading");
+    free (buffer);
+    return -EXIT_FAILURE;
+  }
+
+  sock = microtcp_socket (AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+  if (sock.sd < 0) {
+    perror ("Opening microTCP socket");
+    free (buffer);
+    fclose (fp);
+    return -EXIT_FAILURE;
+  }
+
+  memset (&sin, 0, sizeof(struct sockaddr_in));
+  sin.sin_family = AF_INET;
+  sin.sin_port = htons (server_port);
+  sin.sin_addr.s_addr = inet_addr (serverip);
+
+  if (microtcp_connect (&sock, (struct sockaddr *) &sin,
+                       sizeof(struct sockaddr_in)) < 0) {
+    perror ("microTCP connect");
+    free (buffer);
+    fclose (fp);
+    close (sock.sd);
+    return -EXIT_FAILURE;
+  }
+
+  while (!feof (fp)) {
+    read_items = fread (buffer, sizeof(uint8_t), CHUNK_SIZE, fp);
+    if (read_items < 1) {
+      break;
+    }
+
+    data_sent = microtcp_send (&sock, buffer, read_items, 0);
+    if (data_sent != (ssize_t) read_items) {
+      printf ("Failed to send the amount of data read from the file.\n");
+      microtcp_shutdown (&sock, SHUT_RDWR);
+      free (buffer);
+      fclose (fp);
+      return -EXIT_FAILURE;
+    }
+  }
+
+  microtcp_shutdown (&sock, SHUT_RDWR);
+  free (buffer);
+  fclose (fp);
   return 0;
 }
 
@@ -256,12 +404,14 @@ int
 main (int argc, char **argv)
 {
   int opt;
-  int port;
+  int port = 0;
   int exit_code = 0;
   char *filestr = NULL;
   char *ipstr = NULL;
   uint8_t is_server = 0;
   uint8_t use_microtcp = 0;
+
+  print_banner (argv[0]);
 
   /* A very easy way to parse command line arguments */
   while ((opt = getopt (argc, argv, "hsmf:p:a:")) != -1) {
@@ -289,23 +439,25 @@ main (int argc, char **argv)
         break;
 
       default:
-        printf (
-            "Usage: bandwidth_test [-s] [-m] -p port -f file"
-            "Options:\n"
-            "   -s                  If set, the program runs as server. Otherwise as client.\n"
-            "   -m                  If set, the program uses the microTCP implementation. Otherwise the normal TCP.\n"
-            "   -f <string>         If -s is set the -f option specifies the filename of the file that will be saved.\n"
-            "                       If not, is the source file at the client side that will be sent to the server.\n"
-            "   -p <int>            The listening port of the server\n"
-            "   -a <string>         The IP address of the server. This option is ignored if the tool runs in server mode.\n"
-            "   -h                  prints this help\n");
+        print_usage (argv[0]);
         exit (EXIT_FAILURE);
+      }
+
+      if (opt == 'h') {
+        print_usage (argv[0]);
+        exit (EXIT_SUCCESS);
       }
   }
 
   /*
    * TODO: Some error checking here???
    */
+
+  if (!filestr || !port || (!is_server && !ipstr)) {
+    /* Ensure mandatory arguments are present before continuing. */
+    print_usage (argv[0]);
+    exit (EXIT_FAILURE);
+  }
 
   /*
    * Depending the use arguments execute the appropriate functions
