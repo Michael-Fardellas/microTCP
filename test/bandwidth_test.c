@@ -78,7 +78,7 @@ server_tcp (uint16_t listen_port, const char *file)
   FILE *fp;
   int sock;
   int accepted;
-  int received;
+  ssize_t received;
   ssize_t written;
   ssize_t total_bytes = 0;
   socklen_t client_addr_len;
@@ -154,7 +154,8 @@ server_tcp (uint16_t listen_port, const char *file)
   while ((received = recv (accepted, buffer, CHUNK_SIZE, 0)) > 0) {
     written = fwrite (buffer, sizeof(uint8_t), received, fp);
     total_bytes += received;
-    if (written * sizeof(uint8_t) != received) {
+    ssize_t written_bytes = written * (ssize_t) sizeof(uint8_t);
+    if (written_bytes != received) {
       printf ("Failed to write to the file the"
               " amount of data received from the network.\n");
       shutdown (accepted, SHUT_RDWR);
@@ -312,8 +313,9 @@ client_tcp (const char *serverip, uint16_t server_port, const char *file)
       return -EXIT_FAILURE;
     }
 
-    data_sent = send (sock, buffer, read_items * sizeof(uint8_t), 0);
-    if (data_sent != read_items * sizeof(uint8_t)) {
+    ssize_t bytes_to_send = (ssize_t)(read_items * sizeof(uint8_t));
+    data_sent = send (sock, buffer, bytes_to_send, 0);
+    if (data_sent != bytes_to_send) {
       printf ("Failed to send the"
               " amount of data read from the file.\n");
       shutdown (sock, SHUT_RDWR);
