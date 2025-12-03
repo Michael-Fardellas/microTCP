@@ -25,6 +25,7 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <signal.h>
+#include <stdio.h>
 
 #include "../lib/microtcp.h"
 #include "../utils/log.h"
@@ -42,7 +43,24 @@ sig_handler(int signal)
 
 int
 main(int argc, char **argv) {
-  uint16_t port;
+  uint16_t port = 0;
+  int opt;
+
+  while ((opt = getopt(argc, argv, "hp:")) != -1) {
+    switch (opt) {
+    case 'p':
+      port = (uint16_t) atoi(optarg);
+      break;
+    default:
+      printf("Usage: %s -p <port>\n", argv[0]);
+      return EXIT_FAILURE;
+    }
+  }
+
+  if (port == 0) {
+    printf("A valid port must be provided.\n");
+    return EXIT_FAILURE;
+  }
 
   /*
    * Register a signal handler so we can terminate the client with
