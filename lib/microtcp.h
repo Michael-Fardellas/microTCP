@@ -21,10 +21,19 @@
 #ifndef LIB_MICROTCP_H_
 #define LIB_MICROTCP_H_
 
+#ifdef _WIN32
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#include <stdint.h>
+/* Define POSIX compatibility types for Windows */
+typedef int socklen_t;
+typedef long ssize_t;
+#else
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <stdint.h>
 #include <netinet/in.h>
+#endif
 
 /*
  * Several useful constants

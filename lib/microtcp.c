@@ -52,7 +52,7 @@ microtcp_seed_rand (void) // kanei seed sto rand mia fora
 } // telos synartisis seed
 
 static int // dilwnei statiki synartisi pou epistrefei int
-microtcp_send_packet (microtcp_sock_t *socket, microtcp_header_t *header, // synexia orismatos send_packet
+microtcp_send_packet (microtcp_sock_t *socket, microtcp_header_t *header, // synexeia orismatos send_packet
                       const uint8_t *payload, size_t payload_len) // stelnei paketo me header kai proairetiko payload
 { // arxi voithitikis synartisis apostolis
   /* Build a zeroed packet buffer, compute the checksum, and send it via UDP. */
